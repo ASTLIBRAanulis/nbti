@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NBTI · 大学人格趣味测试</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        /* 先把主色抽出来，后面改配色方便点 */
+        :root {
+            --purple: #6a4e9b;
+            --green: #3b8b6e;
+            --card-shadow: 0 24px 48px -12px rgba(45, 35, 70, 0.3);
+        }
+
+        html, body {
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        body {
+            font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            background: #14121f;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* ========== 背景部分 ==========
+           一开始只用了 CSS 渐变，太死板了。
+           后来改成几个大圆 + blur 叠在一起，再让它们慢慢飘。
+           四个球颜色不一样，这样不会单调。 */
+        .bg-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+            background: #2b2344;
+        }
+
+        .bg-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(70px);
+            opacity: 0.9;
+            will-change: transform; /* 让浏览器提前优化，动画更顺 */
+        }
+
+        /* 左上角紫色球 */
+        .orb-1 {
+            width: 65vmax;
+            height: 65vmax;
+            background: radial-gradient(circle, #b18cff 0%, #7b5bd6 40%, transparent 70%);
+            top: -22vmax;
+            left: -18vmax;
+            animation: orbDrift1 24s ease-in-out infinite alternate,
+                    orbPulse 16s ease-in-out infinite;
+        }
+
+        /* 右下角绿色球 */
+        .orb-2 {
+            width: 60vmax;
+            height: 60vmax;
+            background: radial-gradient(circle, #5ee0b0 0%, #2f9e78 40%, transparent 70%);
+            bottom: -20vmax;
+            right: -14vmax;
+            animation: orbDrift2 30s ease-in-out infinite alternate,
+                    orbPulse 20s ease-in-out infinite reverse;
+        }
+
+        /* 中间偏左的蓝色球，给画面一点冷色调 */
+        .orb-3 {
+            width: 50vmax;
+            height: 50vmax;
+            background: radial-gradient(circle, #7aa8ff 0%, #4a7bd6 40%, transparent 70%);
+            top: 25%;
+            left: 40%;
+            opacity: 0.7;
+            animation: orbDrift3 36s ease-in-out infinite alternate,
+                    orbPulse 24s ease-in-out infinite;
+        }
+
+        /* 右上角的粉色球，加一点暖色平衡一下 */
+        .orb-4 {
+            width: 42vmax;
+            height: 42vmax;
+            background: radial-gradient(circle, #ff9ad5 0%, #c96ba6 40%, transparent 70%);
+            top: 5%;
+            right: 15%;
+            opacity: 0.6;
+            animation: orbDrift4 28s ease-in-out infinite alternate,
+                    orbPulse 19s ease-in-out infinite reverse;
+        }
+
+        /* 四个球各飘各的，路径不一样，看起来才自然 */
+        @keyframes orbDrift1 {
+            0%   { transform: translate(0, 0) scale(1); }
+            50%  { transform: translate(9vmax, 7vmax) scale(1.12); }
+            100% { transform: translate(4vmax, 13vmax) scale(0.96); }
+        }
+        @keyframes orbDrift2 {
+            0%   { transform: translate(0, 0) scale(1); }
+            50%  { transform: translate(-11vmax, -9vmax) scale(1.18); }
+            100% { transform: translate(-5vmax, -15vmax) scale(0.92); }
+        }
+        @keyframes orbDrift3 {
+            0%   { transform: translate(-25%, 0) scale(1); }
+            50%  { transform: translate(25%, -12%) scale(1.22); }
+            100% { transform: translate(-12%, 12%) scale(0.9); }
+        }
+        @keyframes orbDrift4 {
+            0%   { transform: translate(0, 0) scale(1); }
+            50%  { transform: translate(-13vmax, 11vmax) scale(1.14); }
+            100% { transform: translate(7vmax, -7vmax) scale(0.86); }
+        }
+
+        /* 明暗呼吸，让球看起来像在“呼吸” */
+        @keyframes orbPulse {
+            0%, 100% { opacity: 0.55; }
+            50%      { opacity: 0.95; }
+        }
+
+        /* 上面那层压暗，只压四周，中间留亮，这样卡片更突出 */
+        .bg-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            background:
+                radial-gradient(ellipse at 50% 40%, rgba(20, 18, 31, 0) 0%, rgba(20, 18, 31, 0.55) 75%),
+                linear-gradient(145deg, rgba(20, 18, 31, 0.15), rgba(20, 18, 31, 0.5));
+            pointer-events: none;
+        }
+
+        /* ========== 卡片 ==========
+           四个页面用同一套样式，靠 JS 控制显示哪个。
+           这样不用写四份 CSS，也方便统一改圆角和阴影。 */
+        .start, .question, .comfort, .end {
+            position: relative;
+            z-index: 2;
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            padding: 40px 34px;
+            border-radius: 28px;
+            width: 100%;
+            max-width: 580px;
+            box-shadow: var(--card-shadow);
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.55);
+            animation: cardIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(26px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* 一开始只让开始页出现，其他先藏起来 */
+        .question, .comfort, .end { display: none; }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #2d2d3a;
+            margin-bottom: 6px;
+        }
+
+        .start h2 {
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: #7a7a8c;
+            margin-bottom: 18px;
+            letter-spacing: 0.6px;
+        }
+
+        .start h3 {
+            font-size: 0.95rem;
+            color: #2c7a6b;
+            font-weight: 500;
+            background: linear-gradient(135deg, #eef7f4, #e3f0ff);
+            display: inline-block;
+            padding: 7px 20px;
+            border-radius: 40px;
+            margin-bottom: 26px;
+            letter-spacing: 0.6px;
+            border: 1px solid rgba(59, 139, 110, 0.15);
+        }
+
+        /* ========== 按钮 ==========
+           普通按钮是白底，开始按钮单独给了渐变，
+           这样视觉上能分出主次。 */
+        button {
+            display: block;
+            width: 100%;
+            margin: 0 auto 12px;
+            padding: 15px 20px;
+            border: 2px solid #e2e0ec;
+            border-radius: 16px;
+            background: #ffffff;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #2d2d3a;
+            cursor: pointer;
+            transition: all 0.18s cubic-bezier(0.2, 0, 0.2, 1);
+            text-align: left;
+            line-height: 1.45;
+            letter-spacing: 0.2px;
+            position: relative;
+            overflow: hidden;
+        }
+        /* 鼠标移上去时有一小块光跟着走，是答辩时被问过的一个小细节 */
+        button::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(106, 78, 155, 0.14), transparent 60%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        button:hover {
+            border-color: var(--purple);
+            background: #f7f4ff;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -8px rgba(106, 78, 155, 0.35);
+        }
+        button:hover::after { opacity: 1; }
+        button:active { transform: translateY(0) scale(0.99); }
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            border-color: #ccc;
+            background: #f7f7f7;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* 开始页的按钮要显眼一点，所以单独做了渐变 */
+        .start button {
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            background: linear-gradient(135deg, var(--purple), var(--green));
+            color: #fff;
+            border: none;
+            box-shadow: 0 14px 30px -10px rgba(106, 78, 155, 0.6);
+        }
+        .start button:hover {
+            background: linear-gradient(135deg, #7b5eb0, #45a07f);
+            box-shadow: 0 18px 34px -10px rgba(106, 78, 155, 0.7);
+        }
+
+        /* ========== 进度条 ==========
+           用了一个流动的渐变，让进度条看起来“活着”，
+           比单纯一条色块好看一点。 */
+        .progress-wrap { margin-bottom: 22px; }
+        .progress-track {
+            width: 100%;
+            height: 9px;
+            background: #ece9f5;
+            border-radius: 99px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #8b7ac7, #3b8b6e, #8b7ac7);
+            background-size: 200% 100%;
+            border-radius: 99px;
+            transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: shimmer 2.4s linear infinite;
+        }
+        @keyframes shimmer {
+            0%   { background-position: 0% 0; }
+            100% { background-position: 200% 0; }
+        }
+        #progress-text {
+            font-size: 0.8rem;
+            color: #8a8a9e;
+            letter-spacing: 0.6px;
+            margin-top: 9px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ========== 题目和选项 ==========
+           每换一题，题目和选项都会重新播一次进场动画，
+           做法是把 animation 先设 none 再恢复，浏览器就会重新触发。 */
+        #question-text {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #1e1e2a;
+            margin: 20px 0 26px;
+            line-height: 1.55;
+            animation: fadeSlideIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        #question-box {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+        /* 四个选项依次出现，不是一起蹦出来，看起来会舒服一点 */
+        #question-box button {
+            animation: optionIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        #question-box button:nth-child(1) { animation-delay: 0.04s; }
+        #question-box button:nth-child(2) { animation-delay: 0.09s; }
+        #question-box button:nth-child(3) { animation-delay: 0.14s; }
+        #question-box button:nth-child(4) { animation-delay: 0.19s; }
+        @keyframes optionIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* 返回按钮做得小一点，和主选项区分开 */
+        .back-btn {
+            display: inline-block;
+            width: auto;
+            margin: 0 0 0 2px;
+            padding: 9px 20px;
+            font-size: 0.85rem;
+            color: var(--purple);
+            border: 2px solid #e3def5;
+            background: #faf9ff;
+            border-radius: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+        .back-btn:hover {
+            background: #f1edff;
+            border-color: #b9a8e8;
+            transform: translateX(-2px);
+        }
+        .back-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ========== 结果页 ==========
+           头像颜色是跟着人格走的，所以这里只写通用样式，
+           具体颜色在 JS 里用 style 覆盖。 */
+        .result-card-top {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 3.4rem;
+            margin: 4px auto 10px;
+            position: relative;
+            box-shadow: 0 14px 32px -10px rgba(0,0,0,0.25);
+            animation: popIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+                       floaty 4s ease-in-out infinite 0.6s;
+        }
+        @keyframes popIn {
+            from { transform: scale(0.5) rotate(-8deg); opacity: 0; }
+            to   { transform: scale(1) rotate(0); opacity: 1; }
+        }
+        /* 上下轻轻浮动，让结果页不那么死 */
+        @keyframes floaty {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-6px); }
+        }
+
+        .avatar::after {
+            content: "";
+            position: absolute;
+            bottom: -4px;
+            right: -4px;
+            width: 32px;
+            height: 32px;
+            background: inherit;
+            border-radius: 50%;
+            opacity: 0.45;
+            filter: blur(1px);
+        }
+
+        #result-type {
+            font-size: 2.1rem;
+            font-weight: 800;
+            letter-spacing: 6px;
+            margin: 6px 0;
+            display: inline-block;
+            padding: 5px 28px;
+            border-radius: 60px;
+            animation: typeIn 0.5s 0.15s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+        }
+        @keyframes typeIn {
+            from { transform: scale(0.7); opacity: 0; }
+            to   { transform: scale(1); opacity: 1; }
+        }
+
+        #result-name {
+            font-size: 1.35rem;
+            font-weight: 500;
+            color: #4a3b6e;
+            margin: 4px 0 18px;
+            display: inline-block;
+            padding-bottom: 5px;
+            border-bottom: 2px dashed #dad0f0;
+            animation: fadeSlideIn 0.5s 0.25s both;
+        }
+
+        #result-desc {
+            font-size: 0.95rem;
+            color: #3d3d4a;
+            line-height: 1.8;
+            text-align: left;
+            margin: 16px 0 22px;
+            background: #f9f8fe;
+            padding: 22px 24px;
+            border-radius: 18px;
+            border-left: 6px solid var(--purple);
+            animation: fadeSlideIn 0.5s 0.35s both;
+        }
+
+        /* 安慰页的文字，怕太长所以加了滚动 */
+        #comfort-text {
+            font-size: 0.95rem;
+            color: #3f3f4e;
+            line-height: 1.9;
+            text-align: left;
+            margin-bottom: 28px;
+            background: #f8f6ff;
+            padding: 24px 22px;
+            border-radius: 20px;
+            border-left: 6px solid #8b7ac7;
+            max-height: 420px;
+            overflow-y: auto;
+        }
+
+        /* 手机上的适配，主要改小字号和内边距 */
+        @media (max-width: 480px) {
+            .start, .question, .comfort, .end { padding: 30px 22px; }
+            #result-type { font-size: 1.7rem; letter-spacing: 4px; }
+            #question-text { font-size: 1.12rem; }
+            button { font-size: 0.95rem; padding: 13px 15px; }
+            .avatar { width: 96px; height: 96px; font-size: 2.7rem; }
+        }
+
+        /* 如果用户系统里开了“减少动态”，就不播动画了，对眩晕用户友好一点 */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.001s !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.001s !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 背景的四个球，纯装饰，不接鼠标事件 -->
+    <div class="bg-layer">
+        <div class="bg-orb orb-1"></div>
+        <div class="bg-orb orb-2"></div>
+        <div class="bg-orb orb-3"></div>
+        <div class="bg-orb orb-4"></div>
+    </div>
+    <div class="bg-overlay"></div>
+
+    <!-- 开始页：只放标题和开始按钮 -->
+    <div class="start">
+        <h1>NBTI</h1>
+        <h3>Notes · Breaks · Trials · Identity</h3>
+        <h2>✨ 大学人格趣味小测试 · 仅供参考 ✨</h2>
+        <button onclick="startTest()">开始测试</button>
+    </div>
+
+    <!-- 答题页：进度条 + 题目 + 选项 + 返回 -->
+    <div class="question">
+        <div class="progress-wrap">
+            <div class="progress-track">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div id="progress-text">第 1 / 20 题</div>
+        </div>
+        <p id="question-text">问题</p>
+        <div id="question-box"></div>
+        <button class="back-btn" id="back-btn" onclick="goBack()">← 返回上一题</button>
+    </div>
+
+    <!-- 安慰页：选“不满意”的时候会先看到这个，再进结果 -->
+    <div class="comfort">
+        <h1>好好生活</h1>
+        <p id="comfort-text">
+            如果你对现在的生活并不满意，也请不要因此觉得自己是一个失败的人。
+            人生从来都不是一条按照时间表准时到达终点的路，有的人很早就找到了自己想要的生活，
+            有的人走了很久才慢慢明白自己真正想要什么，还有的人可能直到很晚很晚，
+            才终于遇见那个让自己觉得值得的人生。你现在经历的迷茫、遗憾、失望和不甘，
+            并不能代表你以后也只能这样。那些现在让你觉得难熬的日子，
+            或许有一天回头看的时候，只是你漫长人生里很普通的一段路。
+            你不需要现在就变得很厉害，也不需要马上找到答案，更不用因为别人已经走到了哪里，
+            就觉得自己落后了。累的时候就休息一下，难过的时候就允许自己难过，
+            走得慢一点也没有关系。这个世界上还有很多你没有见过的风景，
+            还有很多没有遇见的人，还有很多事情正在未来等着你。
+            生活不一定每天都值得期待，但只要你愿意再多给自己一点时间，
+            也许某一天醒来的时候，你会发现，原来自己已经走到了曾经以为永远都到不了的地方。
+            所以，如果现在的你还不满意自己的生活，那就先别急着给自己的人生下结论，
+            好好活动，好好学习，好好游戏，好好吃饭，好好休息，过开心有趣，精神百倍的人生，可以吗？
+        </p>
+        <button onclick="continueTest()">点一下一切都会好起来的（PS:再次声明人格测试仅供参考，你就是你）</button>
+    </div>
+
+    <!-- 结果页：头像、类型、名称、描述 -->
+    <div class="end">
+        <div class="result-card-top">
+            <div class="avatar" id="result-avatar">😊</div>
+            <h1>你的类型是：</h1>
+            <p id="result-type">xxxx</p>
+            <p id="result-name"></p>
+        </div>
+        <div id="result-desc"></div>
+        <button onclick="location.reload()">再测一次</button>
+    </div>
+
+    <script>
+        // ============================================================
+        // 九种人格的数据，每个都配了 emoji、主题色和一段描述。
+        // 描述故意写得像朋友聊天，不想太“测评腔”。
+        // ============================================================
+        const typeData = {
+            "CALM": {
+                name: "冷静思考者",
+                emoji: "🧠",
+                color: "#dbe9ff",
+                accent: "#3b6b9c",
+                desc: "你习惯在行动前先观察和思考，不会轻易被情绪带着走。小组讨论时你常常是那个把跑偏的话题拉回来的人，朋友遇到麻烦也喜欢找你商量。你相信「慢一点但想清楚」比「快一点但后悔」更划算。偶尔会被人说“太理性”，但你知道那只是你保护自己和别人的方式。<br><br>你也懂得给自己留白，不会把日程塞得太满。一杯茶、一本书、一段安静的散步，都能让你恢复能量。你不需要热闹来证明自己，内心的秩序感就是你的充电宝。"
+            },
+            "SUNNY": {
+                name: "氛围小太阳",
+                emoji: "🌞",
+                color: "#fff2d6",
+                accent: "#c77d1a",
+                desc: "你走到哪里，哪里就多一点点笑声。你善于发现生活中微小的快乐，也乐于把这份快乐传递出去。室友情绪低落时，你会默默点一杯奶茶；小组作业卡壳时，你一句玩笑就能让气氛重新流动起来。你不是没有烦恼，只是选择用温暖的方式面对世界。<br><br>你相信「开心是一天，不开心也是一天」，所以尽量让每一天都亮一点。你的朋友圈里不一定都是精修照片，但一定有让人会心一笑的日常。和你相处，很多人都觉得轻松、被接纳。"
+            },
+            "STEADY": {
+                name: "靠谱执行者",
+                emoji: "📋",
+                color: "#e3f5e8",
+                accent: "#2c7a4a",
+                desc: "你是那种“说了就会做，做了就有结果”的人。作业提前交、小组任务按时完成、约好的时间绝不迟到。你不太喜欢临时变卦，也不擅长画大饼，但你的每一步都踏实。朋友说你是“定心丸”，队友说你是“神队友”。<br><br>你相信积累的力量，不追求一夜逆袭，更愿意每天进步一点点。偶尔也会累，但你懂得给自己设置休息点。你不是没有野心，只是更喜欢把野心拆成一个个可以完成的小目标。"
+            },
+            "CREATIVE": {
+                name: "脑洞创意家",
+                emoji: "🎨",
+                color: "#fde8f3",
+                accent: "#a63d7a",
+                desc: "你的脑子里经常冒出奇奇怪怪的点子，有时候连你自己都觉得“这也可以？”。做展示时你总能想到别人想不到的角度，写论文时你也喜欢找一些冷门但有趣的切入点。你不喜欢被框住，更愿意在规则之内玩出一点新意。<br><br>你的桌面可能有点乱，但那是你独特的灵感地图。你偶尔会因为想法太多而拖延，但只要找到真正感兴趣的事，你就能爆发出惊人的专注力。对你来说，生活最大的乐趣就是——发现新的可能性。"
+            },
+            "WARM": {
+                name: "温柔支持者",
+                emoji: "💗",
+                color: "#fdeaea",
+                accent: "#b54a5a",
+                desc: "你心思细腻，很擅长察觉别人的情绪变化。朋友难过时，你不一定会说很多大道理，但你会安静地陪着，或者递上一张纸巾、一杯温水。你相信“被看见”本身就是一种治愈。小组里你常常是那个协调气氛、照顾每个人感受的角色。<br><br>你有时候会太在意别人的看法，委屈自己。但请记得，你的温柔很珍贵，也要留一份给自己。学会说“不”并不会让你变得冷漠，反而能让你的善良更有力量。你已经很棒了，偶尔任性一点也没关系。"
+            },
+            "FOCUS": {
+                name: "专注独行侠",
+                emoji: "🌙",
+                color: "#e8e3f5",
+                accent: "#5c4a8a",
+                desc: "你享受一个人做事的状态。图书馆的角落、清晨的自习室、深夜的书桌前，都是你高效运转的战场。你不是不喜欢社交，只是独处能让你恢复能量、理清思路。你对自己感兴趣的事情可以钻研很久，别人觉得枯燥的内容，你却能看出门道。<br><br>你不太在意热闹的聚会，更喜欢和一两个知心朋友深度聊天。你的节奏或许和别人不一样，但你知道自己在往哪里走。偶尔主动分享你的世界，也会让身边的人更懂你。"
+            },
+            "BALANCE": {
+                name: "生活平衡家",
+                emoji: "⚖️",
+                color: "#e6f4ee",
+                accent: "#3b7a6e",
+                desc: "你懂得在学习和休息之间找平衡。该上课上课，该复习复习，但也不会亏待自己的胃和睡眠。你相信“可持续的努力”比“短期拼命”更重要。周末你会安排一点喜欢的事情：做饭、运动、看剧、散步……你把自己的生活打理得井井有条。<br><br>你不喜欢极端，也不爱跟风内卷。别人焦虑时，你常常能冷静地说一句“先吃好睡好再说”。这不是躺平，而是你知道——只有照顾好自己，才能走得更远。"
+            },
+            "CURIOUS": {
+                name: "好奇探索者",
+                emoji: "🔭",
+                color: "#e0f0f8",
+                accent: "#2c6a8a",
+                desc: "你对世界保持着旺盛的好奇心。看到一个陌生概念，你会忍不住去搜一下；听到不同的观点，你会先想一想“为什么”。你选课喜欢跨专业，聊天喜欢问“然后呢”。你的收藏夹里躺着各种“以后要看”的内容，虽然不一定看得完，但那份探索欲一直在线。<br><br>你偶尔会因为兴趣太广泛而难以聚焦，但你的知识面和生活体验也因此比很多人都丰富。保持这份好奇，它会带你走到意想不到的地方。"
+            },
+            "REAL": {
+                name: "真实做自己",
+                emoji: "🎭",
+                color: "#f2eee9",
+                accent: "#7a5a3a",
+                desc: "你不喜欢伪装，也不擅长讨好。开心就笑，不开心也会直接说。你相信真诚是最高效的沟通方式，所以朋友都觉得和你相处很轻松——不用猜。你可能会因为太直白而偶尔得罪人，但懂你的人都知道你没有恶意。<br><br>你不太在意别人的评价体系，更愿意按自己的节奏生活。你不追求成为“别人家的孩子”，只想成为“自己认可的自己”。这份坦率，在成年人的世界里其实很珍贵。"
+            }
+        };
+
+        // ============================================================
+        // 题库。一开始想写那种很“正经”的性格题，后来觉得太像考试，
+        // 就换成了大学生日常会遇到的场景。每个选项只加 2 分，
+        // 主要是让九种人格都有机会被选到，不会一家独大。
+        // ============================================================
+        const questions = [
+            { q: "早上八点的课，闹钟响了三次，你会？", options: [
+                { text: "立刻起床，洗漱完还能吃个早饭", scores: { "STEADY": 2 } },
+                { text: "再眯五分钟，然后匆忙出门", scores: { "REAL": 2 } },
+                { text: "看情况，能赶上就上，赶不上就请假", scores: { "BALANCE": 2 } },
+                { text: "提前一晚就准备好，从来不会慌", scores: { "CALM": 2 } }
+            ]},
+            { q: "中午食堂人特别多，你会？", options: [
+                { text: "去常去的窗口排队，稳一点", scores: { "STEADY": 2 } },
+                { text: "逛一圈看看哪家人少再决定", scores: { "CALM": 2 } },
+                { text: "拉上室友一起，边聊边等不无聊", scores: { "SUNNY": 2 } },
+                { text: "随便买点回宿舍吃，省时间", scores: { "FOCUS": 2 } }
+            ]},
+            { q: "选课系统开放了，你的策略是？", options: [
+                { text: "提前做好功课，按计划选", scores: { "CALM": 2 } },
+                { text: "先抢热门的，抢到再说", scores: { "REAL": 2 } },
+                { text: "问问学长学姐哪些课有意思", scores: { "CURIOUS": 2 } },
+                { text: "选和朋友一样的，有个伴", scores: { "WARM": 2 } }
+            ]},
+            { q: "小组作业要分工，你通常会？", options: [
+                { text: "主动认领自己擅长的部分", scores: { "STEADY": 2 } },
+                { text: "先听大家的，再协调一下", scores: { "WARM": 2 } },
+                { text: "提出一个大家都没想到的方案", scores: { "CREATIVE": 2 } },
+                { text: "看情况，别人不做的我来做", scores: { "BALANCE": 2 } }
+            ]},
+            { q: "宿舍夜聊到十二点，你一般是？", options: [
+                { text: "聊得最起劲的那个", scores: { "SUNNY": 2 } },
+                { text: "安静听着，偶尔插一句", scores: { "FOCUS": 2 } },
+                { text: "提醒大家明天还有课，早点睡", scores: { "STEADY": 2 } },
+                { text: "躺床上边刷手机边听", scores: { "REAL": 2 } }
+            ]},
+            { q: "考试周复习，你的状态是？", options: [
+                { text: "按计划复习，每天完成一点", scores: { "STEADY": 2 } },
+                { text: "和同学组队去图书馆，互相监督", scores: { "WARM": 2 } },
+                { text: "找各种资料、笔记，探索最全的版本", scores: { "CURIOUS": 2 } },
+                { text: "前松后紧，最后两天疯狂补", scores: { "REAL": 2 } }
+            ]},
+            { q: "社团招新，你更可能加入？", options: [
+                { text: "和专业相关的，对以后有帮助", scores: { "STEADY": 2 } },
+                { text: "看起来好玩的，能认识新朋友", scores: { "SUNNY": 2 } },
+                { text: "小众一点的，感觉更有意思", scores: { "CREATIVE": 2 } },
+                { text: "先观望，不急着决定", scores: { "CALM": 2 } }
+            ]},
+            { q: "关于实习和未来规划，你的态度是？", options: [
+                { text: "早就开始准备了，简历改了好几版", scores: { "STEADY": 2 } },
+                { text: "走一步看一步，机会来了就上", scores: { "BALANCE": 2 } },
+                { text: "想多尝试不同方向，找到真正喜欢的", scores: { "CURIOUS": 2 } },
+                { text: "有点焦虑，但不想被焦虑推着走", scores: { "WARM": 2 } }
+            ]},
+            { q: "轮到你在课堂上做展示，你会？", options: [
+                { text: "提前排练好几遍，稳一点", scores: { "STEADY": 2 } },
+                { text: "做个有创意的PPT，让人记住", scores: { "CREATIVE": 2 } },
+                { text: "讲清楚就行，不追求花哨", scores: { "REAL": 2 } },
+                { text: "紧张，但会深呼吸让自己冷静", scores: { "CALM": 2 } }
+            ]},
+            { q: "朋友临时找你帮忙搬宿舍，你会？", options: [
+                { text: "能帮就帮，朋友之间嘛", scores: { "WARM": 2 } },
+                { text: "先问清楚时间，安排好自己的事再去", scores: { "CALM": 2 } },
+                { text: "叫上几个人一起，速战速决", scores: { "SUNNY": 2 } },
+                { text: "如果实在没空，会直接说清楚", scores: { "REAL": 2 } }
+            ]},
+            { q: "室友都在熬夜打游戏/追剧，你会？", options: [
+                { text: "戴上耳机，做自己的事", scores: { "FOCUS": 2 } },
+                { text: "加入一起，偶尔放松一下", scores: { "SUNNY": 2 } },
+                { text: "提醒一下音量，然后准备睡觉", scores: { "STEADY": 2 } },
+                { text: "看心情，有时加入有时早睡", scores: { "BALANCE": 2 } }
+            ]},
+            { q: "老师提了一个你不太确定的问题，你会？", options: [
+                { text: "举手试试，说错了也没关系", scores: { "REAL": 2 } },
+                { text: "先在心里想清楚再决定举不举手", scores: { "CALM": 2 } },
+                { text: "和旁边同学小声讨论一下", scores: { "WARM": 2 } },
+                { text: "记下来，课后自己查资料搞明白", scores: { "CURIOUS": 2 } }
+            ]},
+            { q: "学校办了一场讲座，主题你不太了解，你会？", options: [
+                { text: "去看看，说不定能学到新东西", scores: { "CURIOUS": 2 } },
+                { text: "先查一下讲者背景，再决定去不去", scores: { "CALM": 2 } },
+                { text: "拉上朋友一起，顺便聚一聚", scores: { "SUNNY": 2 } },
+                { text: "不太感兴趣，就不去了", scores: { "REAL": 2 } }
+            ]},
+            { q: "你的作息更接近下面哪种？", options: [
+                { text: "比较规律，尽量不熬夜", scores: { "BALANCE": 2 } },
+                { text: "晚睡晚起，但保证睡眠时长", scores: { "REAL": 2 } },
+                { text: "看第二天有没有早课", scores: { "CALM": 2 } },
+                { text: "经常熬夜，白天补觉", scores: { "FOCUS": 2 } }
+            ]},
+            { q: "遇到喜欢的人，你会主动表白吗？", options: [
+                { text: "会，不想留遗憾", scores: { "REAL": 2 } },
+                { text: "不会，先慢慢了解再说", scores: { "CALM": 2 } },
+                { text: "会先试探，看对方反应再决定", scores: { "BALANCE": 2 } },
+                { text: "不会，怕连朋友都做不成", scores: { "WARM": 2 } }
+            ]},
+            { q: "“NBTI” 这个名称你更倾向于理解为？", options: [
+                { text: "一个轻松的人格趣味测试", scores: { "SUNNY": 2 } },
+                { text: "名字不重要，题目有意思就行", scores: { "CURIOUS": 2 } },
+                { text: "Notes · Breaks · Trials · Identity", scores: { "FOCUS": 2 } },
+                { text: "就是一个测试，别太当真", scores: { "REAL": 2 } }
+            ]},
+            { q: "面对一堆DDL，你通常会？", options: [
+                { text: "列个清单，按截止时间排序", scores: { "STEADY": 2 } },
+                { text: "先做最急的，其他的再说", scores: { "REAL": 2 } },
+                { text: "找个搭子一起互相监督", scores: { "WARM": 2 } },
+                { text: "先做自己喜欢的那部分", scores: { "CREATIVE": 2 } }
+            ]},
+            { q: "没课的下午，你更想？", options: [
+                { text: "一个人去图书馆或自习室", scores: { "FOCUS": 2 } },
+                { text: "约朋友出去逛逛", scores: { "SUNNY": 2 } },
+                { text: "在宿舍收拾收拾，休息一下", scores: { "BALANCE": 2 } },
+                { text: "尝试一件没做过的小事", scores: { "CURIOUS": 2 } }
+            ]},
+            { q: "小组讨论时你和别人意见不一致，你会？", options: [
+                { text: "把自己的理由讲清楚，然后大家投票", scores: { "CALM": 2 } },
+                { text: "先听对方的，再决定要不要坚持", scores: { "WARM": 2 } },
+                { text: "提出一个折中方案", scores: { "BALANCE": 2 } },
+                { text: "坚持自己的想法，除非被说服", scores: { "REAL": 2 } }
+            ]},
+            // 最后一题是“满意度”，选不满意会先跳到一个安慰页。
+            // 这个设计是我自己加的，想让测试不那么冷冰冰。
+            { q: "你满意现在的生活吗？", options: [
+                { text: "满意", scores: { "SUNNY": 2 } },
+                { text: "不满意", scores: { "WARM": 2 }, comfort: true }
+            ]}
+        ];
+
+        // ===== 状态 =====
+        let current = 0;
+        // 用数组记每道题选了第几个选项，不直接累加分数，
+        // 这样返回上一题改答案的时候，分数不会残留。
+        let answers = new Array(questions.length).fill(undefined);
+
+        // ============================================================
+        // 页面切换：之前是各自改 display，结果有一次安慰页和结果页
+        // 同时冒出来了。后来就统一成一个函数，每次都先把所有页面藏掉，
+        // 再显示目标页面，保证屏幕上永远只有一张卡片。
+        // ============================================================
+        function showPage(selector) {
+            document.querySelectorAll(".start, .question, .comfort, .end").forEach(el => {
+                el.style.display = "none";
+            });
+            const target = document.querySelector(selector);
+            if (target) target.style.display = "block";
+        }
+
+        // 点击开始，重置状态，进入答题页
+        function startTest() {
+            current = 0;
+            answers = new Array(questions.length).fill(undefined);
+            showPage(".question");
+            renderQuestion();
+        }
+
+        // 进度条：按“已答题数 / 总题数”算宽度
+        function updateProgress() {
+            const pct = (current / questions.length) * 100;
+            document.getElementById("progress-fill").style.width = pct + "%";
+            document.getElementById("progress-text").textContent =
+                `第 ${current + 1} / ${questions.length} 题`;
+        }
+
+        // 渲染当前这一题
+        function renderQuestion() {
+            const q = questions[current];
+
+            updateProgress();
+            const qText = document.getElementById("question-text");
+            qText.textContent = q.q;
+            // 重新触发题目淡入动画，不然只播一次后面就不动了
+            qText.style.animation = "none";
+            void qText.offsetWidth;
+            qText.style.animation = "";
+
+            const box = document.getElementById("question-box");
+            box.innerHTML = "";
+
+            q.options.forEach((opt, idx) => {
+                const btn = document.createElement("button");
+                btn.textContent = opt.text;
+                // 如果这题之前选过，就把按钮回显成选中状态
+                if (answers[current] === idx) {
+                    btn.disabled = true;
+                    btn.style.borderColor = "#6a4e9b";
+                    btn.style.background = "#f1edff";
+                }
+                // 鼠标移动时记录坐标，用来做按钮上的光晕
+                btn.addEventListener("mousemove", e => {
+                    const rect = btn.getBoundingClientRect();
+                    btn.style.setProperty("--x", ((e.clientX - rect.left) / rect.width) * 100 + "%");
+                    btn.style.setProperty("--y", ((e.clientY - rect.top) / rect.height) * 100 + "%");
+                });
+                btn.onclick = () => {
+                    answers[current] = idx;
+                    // 停 200ms 再切题，让用户看到自己点中了
+                    setTimeout(() => {
+                        if (opt.comfort) {
+                            // 最后一题选“不满意”，先去安慰页，不直接出结果
+                            showPage(".comfort");
+                            return;
+                        }
+                        if (current < questions.length - 1) {
+                            current++;
+                            renderQuestion();
+                        } else {
+                            showResult();
+                        }
+                    }, 200);
+                };
+                box.appendChild(btn);
+            });
+
+            // 第一题时返回按钮不可点
+            const backBtn = document.getElementById("back-btn");
+            backBtn.disabled = (current === 0);
+        }
+
+        // 返回上一题：把当前题和上一题的答案都清掉，让用户重新选
+        function goBack() {
+            if (current === 0) return;
+            answers[current] = undefined;
+            current--;
+            answers[current] = undefined;
+            renderQuestion();
+        }
+
+        // 把 answers 里的选择回算成各人格的分数
+        function calcScores() {
+            const s = {};
+            answers.forEach((optIdx, qIdx) => {
+                if (optIdx === undefined) return;
+                const opt = questions[qIdx].options[optIdx];
+                if (!opt || !opt.scores) return;
+                for (const [type, point] of Object.entries(opt.scores)) {
+                    s[type] = (s[type] || 0) + point;
+                }
+            });
+            return s;
+        }
+
+        // 安慰页点按钮后进结果页
+        function continueTest() {
+            showPage(".end");
+            renderResult();
+        }
+
+        // 直接出结果（没走安慰页的时候）
+        function showResult() {
+            showPage(".end");
+            renderResult();
+        }
+
+        // 真正填充结果页：算分、选最高、套用对应的头像和描述
+        function renderResult() {
+            const scores = calcScores();
+            const maxScore = Math.max(...Object.values(scores), 0);
+            const winners = Object.keys(scores).filter(t => scores[t] === maxScore);
+            // 有并列最高分就随机选一个，不然永远只出第一个
+            const winner = winners.length
+                ? winners[Math.floor(Math.random() * winners.length)]
+                : "CALM";
+
+            const data = typeData[winner] || {
+                name: "未知人格",
+                desc: "这个人格还没被定义。",
+                emoji: "❓",
+                color: "#eeeeee",
+                accent: "#666666"
+            };
+
+            const avatarEl = document.getElementById("result-avatar");
+            avatarEl.textContent = data.emoji;
+            avatarEl.style.background = `linear-gradient(145deg, ${data.color}, #ffffff)`;
+            avatarEl.style.border = `3px solid ${data.accent}33`;
+
+            document.getElementById("result-type").textContent = winner;
+            document.getElementById("result-type").style.color = data.accent;
+            document.getElementById("result-type").style.background = data.color + "cc";
+            document.getElementById("result-name").textContent = data.name;
+            document.getElementById("result-desc").innerHTML = data.desc;
+        }
+    </script>
+</body>
+</html>
